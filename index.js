@@ -4,25 +4,19 @@ const http = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
 const io = new Server(server);
-const { DefaultAzureCredential } = require('@azure/identity');
-const sql = require('mssql');
+
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
+const pg = require('pg');
 app.use(express.json());
 
+const { Client, Pool } = pg;
+const client = new Client(
+	'postgresql://admin:l1uLHfXu1xV1wDosNnLTgFiNqdyiQP5m@dpg-cs02i51u0jms73e0iql0-a.oregon-postgres.render.com/sky_field_db_dev?ssl=true'
+);
+const pool = new Pool();
 app.use(cors());
 require('dotenv').config();
-
-const pool = new sql.ConnectionPool({
-	user: 'admin',
-	password: '0518942A!b',
-	database: 'webcamtcg_dev',
-	server: 'DESKTOP-9ECP87B',
-	options: {
-		trustedConnection: true,
-		trustServerCertificate: true,
-	},
-});
 
 io.on('connection', (socket) => {
 	console.log('a user connected');
@@ -35,6 +29,7 @@ io.on('connection', (socket) => {
 
 server.listen(3000, async () => {
 	console.log('listening on *:3000');
+	await client.connect();
 });
 
 app.post('/rooms', (req, res) => {
@@ -42,10 +37,10 @@ app.post('/rooms', (req, res) => {
 		const request = req.body;
 		var room = {
 			id: uuidv4(),
-			formatType: request.formatType,
-			formatName: request.formatName,
+			formattype: request.formattype,
+			formatname: request.formatname,
 			language: request.language,
-			isPublic: request.isPublic,
+			ispublic: request.ispublic,
 		};
 
 		createRoom(room);
@@ -85,114 +80,73 @@ app.post('/rooms/destroy', (req, res) => {
 app.get('/rooms', async (req, res) => {
 	try {
 		const rooms = await getRooms();
+		console.log('ROOMS', rooms);
 		res.json({ results: rooms });
-	} catch (ex) {}
+	} catch (ex) {
+		console.error(ex);
+	}
 });
 
-function createRoom(room) {
-	pool.connect()
-		.then(() => {
-			return pool
-				.request()
-				.input('id', sql.VarChar, room.id)
-				.input(
-					'formatType',
-					sql.Int,
-					room.formatType
-				)
-				.input(
-					'formatName',
-					sql.VarChar,
-					room.formatName
-				)
-				.input(
-					'language',
-					sql.VarChar,
-					room.language
-				)
-				.input(
-					'isPublic',
-					sql.Bit,
-					room.isPublic
-				)
-				.query(
-					'insert into dbo.rooms (roomId, formatType, formatName, language, isPublic) values (@id, @formatType, @formatName, @language, @isPublic)'
-				);
-		})
-		.then((result) => {
-			//console.log(result);
-			pool.close();
-		})
-		.catch((err) => {
-			console.log(err);
-			pool.close();
-		});
+async function createRoom(room) {
+	try {
+		console.log(room);
+		await client.query(
+			'insert into rooms (roomId, formatType, formatName, language, isPublic) values ($1, $2, $3, $4, $5)',
+			[
+				room.id,
+				room.formattype,
+				room.formatname,
+				room.language,
+				room.ispublic,
+			],
+			(err, res) => {
+				console.log(err);
+			}
+		);
+	} catch (err) {
+		console.error(err);
+	}
 }
 
-function getRooms() {
-	return pool
-		.connect()
-		.then(() => {
-			return pool
-				.request()
-				.query(
-					'select * from dbo.rooms where active = 1 and isPublic = 1 and isFull = 0'
-				);
-		})
-		.then((result) => {
-			//console.log(result);
-
-			pool.close();
-			return result.recordset;
-		})
-		.catch((err) => {
-			console.log(err);
-			pool.close();
-		});
+async function getRooms() {
+	try {
+		const res = await client.query(
+			'select * from rooms where active = true and isPublic = true and isFull = false'
+		);
+		return res.rows;
+	} catch (err) {
+		console.error(err);
+	}
 }
 
-function fillRoom(roomId) {
-	return pool
-		.connect()
-		.then(() => {
-			return pool
-				.request()
-				.input('id', sql.VarChar, roomId)
-				.query(
-					'update dbo.rooms set isFull = 1 where roomId = @id'
-				);
-		})
-		.then((result) => {
-			//console.log(result);
-
-			pool.close();
-			return result.recordset;
-		})
-		.catch((err) => {
-			console.log(err);
-			pool.close();
+async function fillRoom(roomId) {
+	try {
+		await client.connect((err) => {
+			client.query(
+				'update rooms set isFull = true where roomId = $1',
+				[roomId],
+				(err, res) => {
+					console.log(err);
+				}
+			);
 		});
+	} catch (err) {
+		console.error(err);
+	}
 }
 
 function destroyRoom(roomId) {
-	return pool
-		.connect()
-		.then(() => {
-			return pool
-				.request()
-				.input('id', sql.VarChar, roomId)
-				.query(
-					'update dbo.rooms set isActive = 0 where roomId = @id'
-				);
-		})
-		.then((result) => {
-			//console.log(result);
-
-			pool.close();
-			return result.recordset;
-		})
-		.catch((err) => {
-			console.log(err);
-			pool.close();
+	try {
+		client.connect((err) => {
+			client.query(
+				'update rooms set isActive = false where roomId = $1',
+				[roomId],
+				(err, res) => {
+					console.log(err);
+				}
+			);
 		});
+	} catch (err) {
+		console.error(err);
+	}
 }
