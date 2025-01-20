@@ -12,7 +12,7 @@ app.use(express.json());
 
 const { Client, Pool } = pg;
 const client = new Client(
-	'postgresql://admin:l1uLHfXu1xV1wDosNnLTgFiNqdyiQP5m@dpg-cs02i51u0jms73e0iql0-a.oregon-postgres.render.com/sky_field_db_dev?ssl=true'
+	'postgresql://sky_field_db_dev_owner:pqVRliw3nz5O@ep-billowing-morning-a82rdezx.eastus2.azure.neon.tech/sky_field_db_dev?sslmode=require'
 );
 const pool = new Pool();
 app.use(cors());
